@@ -4,6 +4,16 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Drowsiness Detector",
   description: "On-device driver drowsiness detection — web demo.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "DrowsyDetect",
+  },
+  icons: {
+    apple: "/icon-180.png",
+    icon: "/icon-192.png",
+  },
 };
 
 export const viewport: Viewport = {
