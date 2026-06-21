@@ -7,6 +7,7 @@ import { AlertEngine } from "@/lib/alertEngine";
 import { AlertLevel, AppSettings, DetectionResult, Trip, TripEvent } from "@/lib/types";
 import { saveTrip } from "@/lib/storage";
 import { getFix, toSpeech, locationStatusMessage } from "@/lib/location";
+import { dlog, subscribeDebug, clearDebug } from "@/lib/debug";
 import { warmUpVoices } from "@/lib/tts";
 import { AlertOverlay } from "./Overlays";
 import { EmergencyDialer } from "./EmergencyDialer";
@@ -58,6 +59,8 @@ export function DrivePage({ settings, onTripSaved }: {
   const [closedMs, setClosedMs] = useState(0);
   const [countdown, setCountdown] = useState(5);
   const [locationNote, setLocationNote] = useState<string | null>(null);
+  const [debugLines, setDebugLines] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(true);
 
   // Dialer UI state.
   const [showDialer, setShowDialer] = useState(false);
@@ -134,6 +137,8 @@ export function DrivePage({ settings, onTripSaved }: {
   const handleStart = useCallback(async () => {
     setError(null);
     setLoading(true);
+    clearDebug();
+    dlog("start tapped");
     try {
       warmUpVoices();
 
@@ -156,10 +161,12 @@ export function DrivePage({ settings, onTripSaved }: {
       // is wired into the dispatcher tail once it resolves.
       setProgress("Requesting location…");
       setLocationNote(null);
+      dlog("location: requesting…");
       // Best-effort; only surfaces a banner on a *real* geolocation error
       // (denied / unavailable / timeout). Acquiring a fix legitimately takes a
       // while on mobile (prompt + GPS), so we must NOT treat slowness as failure.
       const locationPromise = getFix(15000, (code) => {
+        dlog(`location: ERROR code ${code}`);
         setLocationNote(locationStatusMessage(code));
       });
 
@@ -202,6 +209,7 @@ export function DrivePage({ settings, onTripSaved }: {
 
       // 4. Wire the pre-resolved location into the dispatcher tail (best-effort).
       locationPromise.then((fix) => {
+        dlog(fix ? `location: OK → "${toSpeech(fix)}"` : "location: null (no fix)");
         audioRef.current?.setEmergencyLocationText(fix ? toSpeech(fix) : null);
         if (fix) setLocationNote(null);
       });
@@ -283,6 +291,9 @@ export function DrivePage({ settings, onTripSaved }: {
     setShowDialer(false);
     setCallingActive(false);
   }, []);
+
+  // Mirror the debug log bus into React state for the on-screen panel.
+  useEffect(() => subscribeDebug(setDebugLines), []);
 
   // Cleanup on unmount.
   useEffect(() => {
@@ -368,6 +379,28 @@ export function DrivePage({ settings, onTripSaved }: {
         >
           📍 {locationNote}
         </button>
+      )}
+
+      {/* On-screen debug log (for diagnosing iPhone behaviour without a console). */}
+      <button
+        className="debug-toggle"
+        onClick={() => setShowDebug((s) => !s)}
+        title="Toggle debug log"
+      >
+        🐞
+      </button>
+      {showDebug && (
+        <div className="debug-panel">
+          {debugLines.length === 0 ? (
+            <div className="debug-line">debug: press Start…</div>
+          ) : (
+            debugLines.map((l, i) => (
+              <div key={i} className="debug-line">
+                {l}
+              </div>
+            ))
+          )}
+        </div>
       )}
 
       {running && (

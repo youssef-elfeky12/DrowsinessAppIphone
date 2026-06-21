@@ -3,6 +3,7 @@
 // driven off the per-frame DetectionResult stream. Behavior matches DESIGN.md §4.
 
 import { AudioEngine } from "./audioEngine";
+import { dlog } from "./debug";
 import {
   AlertLevel,
   DetectionResult,
@@ -290,6 +291,7 @@ export class AlertEngine {
   }
 
   private async startEmergencyFlow() {
+    dlog(`EMERGENCY flow start (already=${this.inEmergencyFlow})`);
     if (this.inEmergencyFlow) return;
     this.inEmergencyFlow = true;
     this.audio.stopPullover();

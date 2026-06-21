@@ -11,8 +11,13 @@
 //   then live TTS speaks the location, and the siren ramps back up.
 
 import { speak } from "./tts";
+import { dlog } from "./debug";
 
 const SND = "/sounds";
+
+function shortSrc(src: string): string {
+  return src.split("/").pop() ?? src;
+}
 export const DIAL_DIGIT_OFFSETS_MS = [71, 437, 701];
 
 function mkAudio(src: string, loop = false): HTMLAudioElement {
@@ -46,6 +51,7 @@ export class AudioEngine {
   init() {
     // Ringback chains: replay up to 3 times, then dispatcher pickup.
     this.calling.addEventListener("ended", () => {
+      dlog(`chain: calling ended (active=${this.dispatcherActive}, left=${this.callingPlaysLeft})`);
       if (!this.dispatcherActive) return;
       this.callingPlaysLeft -= 1;
       if (this.callingPlaysLeft > 0) {
@@ -56,11 +62,13 @@ export class AudioEngine {
     });
     // After dispatcher pickup → cached prefix.
     this.accept.addEventListener("ended", () => {
+      dlog(`chain: accept ended (active=${this.dispatcherActive}) → intro`);
       if (!this.dispatcherActive) return;
       void this.play(this.intro, this.master);
     });
     // After prefix → speak the location, then bring the siren back.
     this.intro.addEventListener("ended", async () => {
+      dlog(`chain: intro ended (active=${this.dispatcherActive}) → speak location="${this.emergencyLocationText ?? "(none)"}"`);
       if (!this.dispatcherActive) return;
       await speak(this.emergencyLocationText ?? "an unknown location", this.master);
       this.unduckSiren();
@@ -68,6 +76,7 @@ export class AudioEngine {
     });
     // Dialer one-shot end.
     this.dialer.addEventListener("ended", () => {
+      dlog("chain: dialer ended → callback");
       const cb = this.dialerEndCb;
       this.dialerEndCb = null;
       cb?.();
@@ -113,8 +122,8 @@ export class AudioEngine {
       a.volume = Math.max(0, Math.min(1, volume));
       a.currentTime = 0;
       await a.play();
-    } catch {
-      /* autoplay blocked / interrupted — ignore */
+    } catch (e) {
+      dlog(`audio play FAILED: ${shortSrc(a.src)} — ${(e as Error).name}: ${(e as Error).message}`);
     }
   }
 
@@ -158,6 +167,7 @@ export class AudioEngine {
 
   /** Plays the dialer one-shot. Returns the digit-offset timeline (ms). */
   async playDialer(): Promise<number[]> {
+    dlog("chain: playDialer");
     await this.play(this.dialer, this.master);
     return DIAL_DIGIT_OFFSETS_MS;
   }
@@ -167,6 +177,7 @@ export class AudioEngine {
   }
 
   async playCallingTimes(n: number) {
+    dlog(`chain: playCallingTimes(${n})`);
     this.dispatcherActive = true; // arm the calling → accept → intro chain
     this.callingPlaysLeft = n;
     await this.play(this.calling, this.master);

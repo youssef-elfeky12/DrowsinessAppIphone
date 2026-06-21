@@ -1,9 +1,12 @@
 // Web Speech API TTS for the dispatcher location tail. Replaces flutter_tts.
 // Picks a US English female-ish voice when available; falls back to default.
 
+import { dlog } from "./debug";
+
 export function speak(text: string, volume = 1.0): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      dlog("TTS: speechSynthesis NOT available");
       resolve();
       return;
     }
@@ -29,17 +32,20 @@ export function speak(text: string, volume = 1.0): Promise<void> {
         return isUs && isFemale;
       });
       if (preferred) u.voice = preferred;
+      dlog(`TTS: speak vol=${u.volume} voices=${voices.length} voice=${u.voice?.name ?? "default"} text="${text.slice(0, 40)}"`);
 
       let done = false;
-      const finish = () => {
+      const finish = (why: string) => {
         if (done) return;
         done = true;
+        dlog(`TTS: finish (${why})`);
         resolve();
       };
-      u.onend = finish;
-      u.onerror = finish;
+      u.onstart = () => dlog("TTS: onstart ✓ (speaking)");
+      u.onend = () => finish("onend");
+      u.onerror = (e) => finish(`onerror: ${(e as SpeechSynthesisErrorEvent).error}`);
       // Safety timeout so the dispatcher chain never hangs.
-      setTimeout(finish, 12000);
+      setTimeout(() => finish("timeout-12s"), 12000);
       // iOS can leave the queue paused after prior audio; resume + cancel any
       // stale silent prime before speaking the real text.
       try {
@@ -49,7 +55,9 @@ export function speak(text: string, volume = 1.0): Promise<void> {
         /* ignore */
       }
       synth.speak(u);
-    } catch {
+      dlog(`TTS: speak() called. speaking=${synth.speaking} pending=${synth.pending} paused=${synth.paused}`);
+    } catch (e) {
+      dlog(`TTS: threw ${(e as Error).message}`);
       resolve();
     }
   });
@@ -67,13 +75,14 @@ export function speak(text: string, volume = 1.0): Promise<void> {
 export function warmUpVoices() {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   const synth = window.speechSynthesis;
-  synth.getVoices(); // kick off async voice-list loading
+  const n = synth.getVoices().length; // kick off async voice-list loading
   try {
     synth.cancel();
     const u = new SpeechSynthesisUtterance(" ");
     u.volume = 0;
     synth.speak(u);
-  } catch {
-    /* ignore */
+    dlog(`TTS: primed (silent unlock), voices=${n}`);
+  } catch (e) {
+    dlog(`TTS: prime threw ${(e as Error).message}`);
   }
 }
