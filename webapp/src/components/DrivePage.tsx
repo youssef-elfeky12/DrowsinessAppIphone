@@ -155,8 +155,20 @@ export function DrivePage({ settings, onTripSaved }: {
       // activation, so requesting it here still prompts. Best-effort; the result
       // is wired into the dispatcher tail once it resolves.
       setProgress("Requesting location…");
-      setLocationNote(null);
-      const locationPromise = getFix(10000, (code, _msg) => {
+      setLocationNote("Requesting location…");
+      // Watchdog: iOS can silently ignore getCurrentPosition (firing neither
+      // success nor error, even past the timeout) when Location Services is
+      // disabled for Safari. This timer doesn't depend on iOS calling us back,
+      // so the user always gets an on-screen explanation.
+      const locWatchdog = setTimeout(() => {
+        setLocationNote((prev) =>
+          prev === "Requesting location…"
+            ? "No location prompt appeared. On iPhone, turn ON Settings ▸ Privacy & Security ▸ Location Services and set Safari Websites to “Ask”/“While Using”, then reload."
+            : prev,
+        );
+      }, 9000);
+      const locationPromise = getFix(12000, (code) => {
+        clearTimeout(locWatchdog);
         setLocationNote(locationStatusMessage(code));
       });
 
@@ -199,6 +211,7 @@ export function DrivePage({ settings, onTripSaved }: {
 
       // 4. Wire the pre-resolved location into the dispatcher tail (best-effort).
       locationPromise.then((fix) => {
+        clearTimeout(locWatchdog);
         audioRef.current?.setEmergencyLocationText(fix ? toSpeech(fix) : null);
         if (fix) setLocationNote(null);
       });
@@ -355,6 +368,18 @@ export function DrivePage({ settings, onTripSaved }: {
         </div>
       )}
 
+      {/* Location status — rendered at the root (not gated on `running`) so it's
+          visible during loading and while the request is pending. */}
+      {locationNote && (
+        <button
+          className="location-note"
+          onClick={() => setLocationNote(null)}
+          title="Tap to dismiss"
+        >
+          📍 {locationNote}
+        </button>
+      )}
+
       {running && (
         <>
           <div className="top-status">
@@ -368,16 +393,6 @@ export function DrivePage({ settings, onTripSaved }: {
               </span>
             )}
           </div>
-
-          {locationNote && (
-            <button
-              className="location-note"
-              onClick={() => setLocationNote(null)}
-              title="Tap to dismiss"
-            >
-              📍 {locationNote}
-            </button>
-          )}
 
           {level === AlertLevel.eyesClosing && (
             <div className="eyes-pill">Eyes closing…</div>
