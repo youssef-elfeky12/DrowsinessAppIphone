@@ -217,6 +217,25 @@ button {
   z-index: 7;
 }
 
+.location-note {
+  position: absolute;
+  top: calc(58px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92%, 460px);
+  background: rgba(11, 15, 20, 0.92);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  color: #fcd34d;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  z-index: 8;
+  cursor: pointer;
+}
+
 /* Full-screen alert overlays */
 .overlay {
   position: absolute;

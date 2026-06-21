@@ -18,9 +18,29 @@ export function toSpeech(fix: LocationFix): string {
   );
 }
 
-export async function getFix(timeoutMs = 10000): Promise<LocationFix | null> {
+// Human-readable explanation for a geolocation outcome, surfaced on-screen so
+// it can be diagnosed on a phone (where the dev console isn't accessible).
+// code: 0 = API unavailable, 1 = denied, 2 = unavailable, 3 = timeout.
+export function locationStatusMessage(code: number): string {
+  switch (code) {
+    case 1:
+      return "Location permission denied. On iPhone: Settings ▸ Privacy & Security ▸ Location Services must be ON and set to Ask/Allow for Safari, and the site must not have been previously blocked (clear it via the “aA” menu ▸ Website Settings).";
+    case 2:
+      return "Location is unavailable right now (no GPS/network fix).";
+    case 3:
+      return "Location request timed out.";
+    default:
+      return "Location isn’t available in this browser (needs an HTTPS connection).";
+  }
+}
+
+export async function getFix(
+  timeoutMs = 10000,
+  onError?: (code: number, message: string) => void,
+): Promise<LocationFix | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     console.warn("[location] navigator.geolocation unavailable (insecure context or unsupported browser)");
+    onError?.(0, "navigator.geolocation unavailable");
     return null;
   }
   try {
@@ -41,6 +61,7 @@ export async function getFix(timeoutMs = 10000): Promise<LocationFix | null> {
     // GeolocationPositionError: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT.
     const err = e as GeolocationPositionError;
     console.warn(`[location] getCurrentPosition failed (code ${err?.code}): ${err?.message}`);
+    onError?.(err?.code ?? 0, err?.message ?? "unknown");
     return null;
   }
 }

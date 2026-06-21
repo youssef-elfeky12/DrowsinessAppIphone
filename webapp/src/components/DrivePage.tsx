@@ -6,7 +6,7 @@ import { AudioEngine } from "@/lib/audioEngine";
 import { AlertEngine } from "@/lib/alertEngine";
 import { AlertLevel, AppSettings, DetectionResult, Trip, TripEvent } from "@/lib/types";
 import { saveTrip } from "@/lib/storage";
-import { getFix, toSpeech } from "@/lib/location";
+import { getFix, toSpeech, locationStatusMessage } from "@/lib/location";
 import { warmUpVoices } from "@/lib/tts";
 import { AlertOverlay } from "./Overlays";
 import { EmergencyDialer } from "./EmergencyDialer";
@@ -57,6 +57,7 @@ export function DrivePage({ settings, onTripSaved }: {
   const [level, setLevel] = useState<AlertLevel>(AlertLevel.none);
   const [closedMs, setClosedMs] = useState(0);
   const [countdown, setCountdown] = useState(5);
+  const [locationNote, setLocationNote] = useState<string | null>(null);
 
   // Dialer UI state.
   const [showDialer, setShowDialer] = useState(false);
@@ -154,7 +155,10 @@ export function DrivePage({ settings, onTripSaved }: {
       // activation, so requesting it here still prompts. Best-effort; the result
       // is wired into the dispatcher tail once it resolves.
       setProgress("Requesting location…");
-      const locationPromise = getFix();
+      setLocationNote(null);
+      const locationPromise = getFix(10000, (code, _msg) => {
+        setLocationNote(locationStatusMessage(code));
+      });
 
       // 2. Audio + models.
       if (!audioRef.current) {
@@ -196,6 +200,7 @@ export function DrivePage({ settings, onTripSaved }: {
       // 4. Wire the pre-resolved location into the dispatcher tail (best-effort).
       locationPromise.then((fix) => {
         audioRef.current?.setEmergencyLocationText(fix ? toSpeech(fix) : null);
+        if (fix) setLocationNote(null);
       });
 
       // 5. Wake lock.
@@ -238,6 +243,7 @@ export function DrivePage({ settings, onTripSaved }: {
     setCallingActive(false);
     setLevel(AlertLevel.none);
     setClosedMs(0);
+    setLocationNote(null);
 
     // Persist the trip.
     if (tripStartRef.current > 0) {
@@ -362,6 +368,16 @@ export function DrivePage({ settings, onTripSaved }: {
               </span>
             )}
           </div>
+
+          {locationNote && (
+            <button
+              className="location-note"
+              onClick={() => setLocationNote(null)}
+              title="Tap to dismiss"
+            >
+              📍 {locationNote}
+            </button>
+          )}
 
           {level === AlertLevel.eyesClosing && (
             <div className="eyes-pill">Eyes closing…</div>
