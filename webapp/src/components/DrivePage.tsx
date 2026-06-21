@@ -60,7 +60,8 @@ export function DrivePage({ settings, onTripSaved }: {
   const [countdown, setCountdown] = useState(5);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
+  const [screenLight, setScreenLight] = useState(false);
 
   // Dialer UI state.
   const [showDialer, setShowDialer] = useState(false);
@@ -255,6 +256,7 @@ export function DrivePage({ settings, onTripSaved }: {
     setLevel(AlertLevel.none);
     setClosedMs(0);
     setLocationNote(null);
+    setScreenLight(false);
 
     // Persist the trip.
     if (tripStartRef.current > 0) {
@@ -405,6 +407,18 @@ export function DrivePage({ settings, onTripSaved }: {
 
       {running && (
         <>
+          {/* Screen "flash": brightens the screen to light the user's face in
+              the dark (the front camera can't use the rear flash). Sits above
+              the preview but below status/controls and alert overlays. */}
+          {screenLight && <div className="screen-light" aria-hidden />}
+          <button
+            className={`light-toggle${screenLight ? " active" : ""}`}
+            onClick={() => setScreenLight((s) => !s)}
+            title="Toggle face light"
+          >
+            💡
+          </button>
+
           <div className="top-status">
             <span className="status-chip" style={{ color: levelColor }}>
               <span className="dot" style={{ background: levelColor }} />

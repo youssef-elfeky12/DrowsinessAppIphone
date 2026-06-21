@@ -236,6 +236,35 @@ button {
   cursor: pointer;
 }
 
+/* Screen "flash" to illuminate the user's face in low light. Translucent so
+   the screen is quite white (bright) but the preview still shows faintly. Below
+   status (z 5) / controls (z 6) so they stay readable, above the camera feed. */
+.screen-light {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0.9;
+  z-index: 3;
+  pointer-events: none;
+}
+.light-toggle {
+  position: absolute;
+  left: calc(10px + env(safe-area-inset-left));
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 31;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(11, 15, 20, 0.8);
+  font-size: 18px;
+  cursor: pointer;
+}
+.light-toggle.active {
+  background: #fde68a;
+  border-color: #fbbf24;
+}
+
 .debug-toggle {
   position: absolute;
   right: calc(10px + env(safe-area-inset-right));
