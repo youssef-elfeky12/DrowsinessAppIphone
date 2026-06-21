@@ -136,13 +136,6 @@ export function DrivePage({ settings, onTripSaved }: {
     try {
       warmUpVoices();
 
-      // 0. Kick off the location request FIRST, while we still have the
-      // Start-tap's user-activation. iOS Safari suppresses the geolocation
-      // prompt if it's requested after a long-running await (e.g. the model
-      // download), which is why the camera used to prompt but location never
-      // did. Fire it now; wire the result into the audio engine once it exists.
-      const locationPromise = getFix();
-
       // 1. Camera (front).
       setProgress("Requesting camera…");
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -153,6 +146,15 @@ export function DrivePage({ settings, onTripSaved }: {
       const video = videoRef.current!;
       video.srcObject = stream;
       await video.play();
+
+      // 1b. Request location AFTER the camera prompt has resolved — never at the
+      // same time. iOS surfaces only one permission prompt at a time, so firing
+      // both together lets the camera prompt win and silently drops the location
+      // one (the bug where location never asked). Geolocation needs no user
+      // activation, so requesting it here still prompts. Best-effort; the result
+      // is wired into the dispatcher tail once it resolves.
+      setProgress("Requesting location…");
+      const locationPromise = getFix();
 
       // 2. Audio + models.
       if (!audioRef.current) {

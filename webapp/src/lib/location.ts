@@ -18,8 +18,11 @@ export function toSpeech(fix: LocationFix): string {
   );
 }
 
-export async function getFix(timeoutMs = 6000): Promise<LocationFix | null> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) return null;
+export async function getFix(timeoutMs = 10000): Promise<LocationFix | null> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    console.warn("[location] navigator.geolocation unavailable (insecure context or unsupported browser)");
+    return null;
+  }
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -34,7 +37,10 @@ export async function getFix(timeoutMs = 6000): Promise<LocationFix | null> {
       longitude: pos.coords.longitude,
       address: addr,
     };
-  } catch {
+  } catch (e) {
+    // GeolocationPositionError: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT.
+    const err = e as GeolocationPositionError;
+    console.warn(`[location] getCurrentPosition failed (code ${err?.code}): ${err?.message}`);
     return null;
   }
 }

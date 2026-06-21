@@ -33,6 +33,12 @@ export class AudioEngine {
 
   private master = 1.0;
   private callingPlaysLeft = 0;
+  // True only while a real emergency dispatcher chain (calling → accept → intro
+  // → TTS) is in progress. The chained "ended" handlers below must NOT fire
+  // otherwise — e.g. during unlock(), where every clip is played briefly to
+  // unlock it; without this guard, the calling clip's "ended" would spuriously
+  // launch the 911-accept audio.
+  private dispatcherActive = false;
   private emergencyLocationText: string | null = null;
   private dialerEndCb: (() => void) | null = null;
   private rampTimer: ReturnType<typeof setInterval> | null = null;
@@ -40,6 +46,7 @@ export class AudioEngine {
   init() {
     // Ringback chains: replay up to 3 times, then dispatcher pickup.
     this.calling.addEventListener("ended", () => {
+      if (!this.dispatcherActive) return;
       this.callingPlaysLeft -= 1;
       if (this.callingPlaysLeft > 0) {
         void this.play(this.calling, this.master);
@@ -49,12 +56,15 @@ export class AudioEngine {
     });
     // After dispatcher pickup → cached prefix.
     this.accept.addEventListener("ended", () => {
+      if (!this.dispatcherActive) return;
       void this.play(this.intro, this.master);
     });
     // After prefix → speak the location, then bring the siren back.
     this.intro.addEventListener("ended", async () => {
+      if (!this.dispatcherActive) return;
       await speak(this.emergencyLocationText ?? "an unknown location", this.master);
       this.unduckSiren();
+      this.dispatcherActive = false;
     });
     // Dialer one-shot end.
     this.dialer.addEventListener("ended", () => {
@@ -68,16 +78,25 @@ export class AudioEngine {
   async unlock() {
     const all = [this.buzz, this.pullover, this.siren, this.dialer,
       this.calling, this.accept, this.intro];
+    // Pass 1: start every clip muted within the user gesture to unlock it.
     for (const a of all) {
+      a.muted = true;
+      // Don't let the looping siren/pullover run away if a pause gets dropped
+      // (iOS); startSiren()/startPullover() re-enable looping when really used.
+      a.loop = false;
       try {
-        a.muted = true;
         await a.play();
-        a.pause();
-        a.currentTime = 0;
-        a.muted = false;
       } catch {
-        a.muted = false;
+        /* autoplay blocked / interrupted — ignore */
       }
+    }
+    // Pass 2: hard-stop everything. Pausing here, after all the play() promises
+    // have settled, is reliable on iOS — where pause-immediately-after-play is
+    // frequently ignored, which used to leak the siren + dispatcher audio.
+    for (const a of all) {
+      a.pause();
+      a.currentTime = 0;
+      a.muted = false;
     }
   }
 
@@ -148,17 +167,20 @@ export class AudioEngine {
   }
 
   async playCallingTimes(n: number) {
+    this.dispatcherActive = true; // arm the calling → accept → intro chain
     this.callingPlaysLeft = n;
     await this.play(this.calling, this.master);
   }
 
   stopCalling() {
+    this.dispatcherActive = false;
     this.callingPlaysLeft = 0;
     this.calling.pause();
     this.calling.currentTime = 0;
   }
 
   stopAll() {
+    this.dispatcherActive = false;
     if (this.rampTimer) {
       clearInterval(this.rampTimer);
       this.rampTimer = null;
