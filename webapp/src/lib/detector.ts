@@ -2,11 +2,12 @@
 //
 // Pipeline per frame:
 //   1. YuNet (onnxruntime-web) → face bbox + right/left eye landmarks
-//   2. small 6-class CNN on the face crop  → yawn/no_yawn + front/down binaries
-//   3. same CNN on each eye crop           → Closed/Open
+//   2. ResNet50V2 6-class CNN on the face crop → yawn/no_yawn + front/down
+//   3. same CNN on each eye crop               → Closed/Open
 //
 // Class index map: 0=yawn 1=no_yawn 2=Closed 3=Open 4=front 5=down
-// Classifier input: [1,145,145,3] NHWC, BGR, pixels /255.
+// Classifier input: [1,224,224,3] NHWC, BGR, ResNet preprocess_input
+//   (x/127.5 - 1). The shipped classifier.onnx is INT8-quantized.
 // YuNet input:      [1,3,640,640] CHW,  BGR, pixels 0..255.
 
 import * as ort from "onnxruntime-web";
@@ -20,7 +21,7 @@ import {
 } from "./types";
 import { decodeYuNet, YUNET_SIZE } from "./yunet";
 
-const IMG_SIZE = 145;
+const IMG_SIZE = 224;
 const EYE_SIDE_FRAC = 0.3;
 const YAWN_IDX = [0, 1];
 const HEAD_IDX = [4, 5];
@@ -231,15 +232,15 @@ export class Detector {
     );
     const data = this.cropCtx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
 
-    // NHWC, BGR, /255.
+    // NHWC, BGR, ResNet50V2 preprocess_input: x/127.5 - 1 → [-1, 1].
     const input = new Float32Array(IMG_SIZE * IMG_SIZE * 3);
     for (let i = 0; i < IMG_SIZE * IMG_SIZE; i++) {
       const r = data[i * 4 + 0];
       const g = data[i * 4 + 1];
       const b = data[i * 4 + 2];
-      input[i * 3 + 0] = b / 255;
-      input[i * 3 + 1] = g / 255;
-      input[i * 3 + 2] = r / 255;
+      input[i * 3 + 0] = b / 127.5 - 1;
+      input[i * 3 + 1] = g / 127.5 - 1;
+      input[i * 3 + 2] = r / 127.5 - 1;
     }
     const tensor = new ort.Tensor("float32", input, [1, IMG_SIZE, IMG_SIZE, 3]);
     const result = await this.clf!.run({
