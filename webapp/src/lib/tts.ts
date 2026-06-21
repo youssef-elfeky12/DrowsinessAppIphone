@@ -40,6 +40,14 @@ export function speak(text: string, volume = 1.0): Promise<void> {
       u.onerror = finish;
       // Safety timeout so the dispatcher chain never hangs.
       setTimeout(finish, 12000);
+      // iOS can leave the queue paused after prior audio; resume + cancel any
+      // stale silent prime before speaking the real text.
+      try {
+        synth.cancel();
+        synth.resume();
+      } catch {
+        /* ignore */
+      }
       synth.speak(u);
     } catch {
       resolve();
@@ -47,9 +55,25 @@ export function speak(text: string, volume = 1.0): Promise<void> {
   });
 }
 
-// Voice list loads async on some browsers; warm it up early.
+// Warm the voice list AND unlock speech. MUST be called from within a user
+// gesture (e.g. the Start tap), synchronously, before any await.
+//
+// iOS Safari refuses speechSynthesis.speak() unless the engine has first been
+// triggered by a speak() that originated inside a user gesture. The location is
+// spoken much later — deep in the emergency dispatcher chain, with no gesture
+// nearby — so without this prime, iOS silently drops it (the bug where the AI
+// voice never says the location on iPhone). We speak a silent utterance now to
+// satisfy that requirement. Desktop browsers don't need it but it's harmless.
 export function warmUpVoices() {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.getVoices();
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const synth = window.speechSynthesis;
+  synth.getVoices(); // kick off async voice-list loading
+  try {
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    synth.speak(u);
+  } catch {
+    /* ignore */
   }
 }
