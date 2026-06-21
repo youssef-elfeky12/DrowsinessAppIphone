@@ -135,6 +135,14 @@ export function DrivePage({ settings, onTripSaved }: {
     setLoading(true);
     try {
       warmUpVoices();
+
+      // 0. Kick off the location request FIRST, while we still have the
+      // Start-tap's user-activation. iOS Safari suppresses the geolocation
+      // prompt if it's requested after a long-running await (e.g. the model
+      // download), which is why the camera used to prompt but location never
+      // did. Fire it now; wire the result into the audio engine once it exists.
+      const locationPromise = getFix();
+
       // 1. Camera (front).
       setProgress("Requesting camera…");
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -183,8 +191,8 @@ export function DrivePage({ settings, onTripSaved }: {
       );
       engineRef.current.start();
 
-      // 4. Pre-resolve location for the dispatcher tail (best-effort).
-      getFix().then((fix) => {
+      // 4. Wire the pre-resolved location into the dispatcher tail (best-effort).
+      locationPromise.then((fix) => {
         audioRef.current?.setEmergencyLocationText(fix ? toSpeech(fix) : null);
       });
 
@@ -276,6 +284,34 @@ export function DrivePage({ settings, onTripSaved }: {
       wakeLockRef.current?.release().catch(() => {});
     };
   }, []);
+
+  // Silence audio + halt detection whenever the app is backgrounded. This is a
+  // PWA (display: standalone) and iOS keeps the page alive in the background —
+  // without this, a half-finished alarm (looping siren / dispatcher chain) keeps
+  // playing and resumes when you reopen the app. Resume detection on return.
+  useEffect(() => {
+    const onHide = () => {
+      cancelAnimationFrame(rafRef.current);
+      engineRef.current?.dismiss(); // stops all audio + resets transient state
+      setLevel(AlertLevel.none);
+      setShowDialer(false);
+      setCallingActive(false);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        onHide();
+      } else if (runningRef.current) {
+        engineRef.current?.start(); // re-arm with a fresh calibration window
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [loop]);
 
   const levelColor =
     level === AlertLevel.critical || level === AlertLevel.emergency

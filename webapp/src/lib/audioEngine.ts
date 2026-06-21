@@ -51,10 +51,10 @@ export class AudioEngine {
     this.accept.addEventListener("ended", () => {
       void this.play(this.intro, this.master);
     });
-    // After prefix → speak the location, then ramp the siren back up.
+    // After prefix → speak the location, then bring the siren back.
     this.intro.addEventListener("ended", async () => {
       await speak(this.emergencyLocationText ?? "an unknown location", this.master);
-      this.rampVolume(this.siren, this.master, 200);
+      this.unduckSiren();
     });
     // Dialer one-shot end.
     this.dialer.addEventListener("ended", () => {
@@ -123,11 +123,18 @@ export class AudioEngine {
     this.siren.pause();
     this.siren.currentTime = 0;
   }
+  // iOS Safari ignores HTMLAudioElement.volume (it's read-only on iPhone), so
+  // volume-ducking is silent there and the dispatcher chain gets buried under
+  // the siren. Pause the siren outright during the dispatcher chain instead —
+  // reliable on every platform — then resume it once the location is spoken.
   duckSiren() {
-    this.rampVolume(this.siren, this.master * 0.1, 200);
+    this.siren.pause();
   }
   unduckSiren() {
-    this.rampVolume(this.siren, this.master, 200);
+    if (this.siren.paused) {
+      this.siren.loop = true;
+      void this.play(this.siren, this.master);
+    }
   }
 
   /** Plays the dialer one-shot. Returns the digit-offset timeline (ms). */
