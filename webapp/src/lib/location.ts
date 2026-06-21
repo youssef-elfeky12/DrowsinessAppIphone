@@ -46,9 +46,9 @@ export async function getFix(
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false,
+        enableHighAccuracy: false, // coarse fix is faster and good enough for an address
         timeout: timeoutMs,
-        maximumAge: 30000,
+        maximumAge: 120000, // accept a position fixed in the last 2 min → returns fast
       });
     });
     const addr = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);

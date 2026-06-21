@@ -155,20 +155,11 @@ export function DrivePage({ settings, onTripSaved }: {
       // activation, so requesting it here still prompts. Best-effort; the result
       // is wired into the dispatcher tail once it resolves.
       setProgress("Requesting location…");
-      setLocationNote("Requesting location…");
-      // Watchdog: iOS can silently ignore getCurrentPosition (firing neither
-      // success nor error, even past the timeout) when Location Services is
-      // disabled for Safari. This timer doesn't depend on iOS calling us back,
-      // so the user always gets an on-screen explanation.
-      const locWatchdog = setTimeout(() => {
-        setLocationNote((prev) =>
-          prev === "Requesting location…"
-            ? "No location prompt appeared. On iPhone, turn ON Settings ▸ Privacy & Security ▸ Location Services and set Safari Websites to “Ask”/“While Using”, then reload."
-            : prev,
-        );
-      }, 9000);
-      const locationPromise = getFix(12000, (code) => {
-        clearTimeout(locWatchdog);
+      setLocationNote(null);
+      // Best-effort; only surfaces a banner on a *real* geolocation error
+      // (denied / unavailable / timeout). Acquiring a fix legitimately takes a
+      // while on mobile (prompt + GPS), so we must NOT treat slowness as failure.
+      const locationPromise = getFix(15000, (code) => {
         setLocationNote(locationStatusMessage(code));
       });
 
@@ -211,7 +202,6 @@ export function DrivePage({ settings, onTripSaved }: {
 
       // 4. Wire the pre-resolved location into the dispatcher tail (best-effort).
       locationPromise.then((fix) => {
-        clearTimeout(locWatchdog);
         audioRef.current?.setEmergencyLocationText(fix ? toSpeech(fix) : null);
         if (fix) setLocationNote(null);
       });
