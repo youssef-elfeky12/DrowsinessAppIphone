@@ -27,10 +27,19 @@ const YAWN_IDX = [0, 1];
 const HEAD_IDX = [4, 5];
 const EYE_IDX = [2, 3];
 
-// onnxruntime-web loads its wasm runtime from this CDN path (version-pinned so
-// it matches the installed package). Avoids bundling the .wasm files.
-ort.env.wasm.wasmPaths =
-  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+// onnxruntime-web loads its wasm runtime from these files, served same-origin
+// from /public/ort. Same-origin is REQUIRED: the app is cross-origin isolated
+// (COOP+COEP require-corp, see next.config.mjs) so multi-threaded WASM works,
+// and require-corp would block a cross-origin CDN copy of the .wasm.
+ort.env.wasm.wasmPaths = "/ort/";
+
+// Use multiple WASM threads. ORT only honours this when the page is
+// cross-origin isolated (SharedArrayBuffer available); otherwise it clamps to
+// 1 thread on its own, so this is safe everywhere. Cap at 4 to avoid
+// oversubscribing phone CPUs. Guarded for SSR (no `navigator` on the server).
+if (typeof navigator !== "undefined") {
+  ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+}
 
 export class Detector {
   private yunet: ort.InferenceSession | null = null;

@@ -120,6 +120,12 @@ export class AudioEngine {
   private async play(a: HTMLAudioElement, volume: number) {
     try {
       a.volume = Math.max(0, Math.min(1, volume));
+      // Pause before rewinding. Setting currentTime = 0 on an element that is
+      // still playing (or has an in-flight play() promise) is unreliable — the
+      // seek can be dropped and playback resumes from its old position, which
+      // is why clips sometimes started "from the middle". Pausing first makes
+      // the rewind stick so every clip begins at 0.
+      a.pause();
       a.currentTime = 0;
       await a.play();
     } catch (e) {
