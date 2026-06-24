@@ -57,6 +57,7 @@ export function DrivePage({ settings, onTripSaved }: {
 
   const [level, setLevel] = useState<AlertLevel>(AlertLevel.none);
   const [closedMs, setClosedMs] = useState(0);
+  const [drowsyCount, setDrowsyCount] = useState(0);
   const [countdown, setCountdown] = useState(5);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
@@ -196,6 +197,7 @@ export function DrivePage({ settings, onTripSaved }: {
             if (ms > longestClosedRef.current) longestClosedRef.current = ms;
           },
           onEvent: (ev) => tripEventsRef.current.push(ev),
+          onDrowsyCount: (n) => setDrowsyCount(n),
           onDialerDigit: (digit) => {
             setShowDialer(true);
             setDigitsTyped((prev) => prev + digit);
@@ -429,6 +431,13 @@ export function DrivePage({ settings, onTripSaved }: {
                 {(closedMs / 1000).toFixed(1)}s closed
               </span>
             )}
+            <span
+              className="status-chip count-chip"
+              style={{ color: drowsyCount > 0 ? COLORS.amber : COLORS.ok }}
+              title="Yawns + head drops in the last 30s"
+            >
+              😴 {drowsyCount}/3
+            </span>
           </div>
 
           {level === AlertLevel.eyesClosing && (

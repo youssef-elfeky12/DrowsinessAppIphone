@@ -28,6 +28,7 @@ export interface AlertCallbacks {
   onLevel: (level: AlertLevel) => void;
   onEvent: (event: TripEvent) => void;
   onClosedMs: (ms: number) => void;
+  onDrowsyCount: (count: number) => void;
   onDialerDigit: (digit: string, index: number) => void;
   onCountdown: (value: number) => void;
   onCallingStarted: () => void;
@@ -62,6 +63,7 @@ export class AlertEngine {
   private lastYawnEventAt = 0;
   private lastHeadDownEventAt = 0;
   private events: TripEvent[] = [];
+  private lastCount = -1;
 
   // Track B
   private closedSince = 0;
@@ -91,6 +93,7 @@ export class AlertEngine {
     this.closedSince = 0;
     this.openSince = 0;
     this.inEmergencyFlow = false;
+    this.emitCount();
   }
 
   stop() {
@@ -98,6 +101,8 @@ export class AlertEngine {
     this.audio.stopAll();
     this.setLevel(AlertLevel.none);
     this.inEmergencyFlow = false;
+    this.events = [];
+    this.emitCount();
   }
 
   dismiss() {
@@ -109,6 +114,7 @@ export class AlertEngine {
     this.inEmergencyFlow = false;
     this.graceUntilMs = Date.now() + 10000;
     this.setLevel(AlertLevel.none);
+    this.emitCount();
   }
 
   async ingest(result: DetectionResult) {
@@ -165,6 +171,7 @@ export class AlertEngine {
         now - e.ts <= DROWSY_WINDOW_MS &&
         (e.type === "yawn" || e.type === "headDown"),
     );
+    this.emitCount();
 
     // ---- Track B ----
     const closed = this.classifyEyesClosed(face);
@@ -199,6 +206,17 @@ export class AlertEngine {
     const eyes = face.eyes.filter((e) => e.conf >= this.confidenceThreshold);
     if (eyes.length === 0) return true; // face but no confident eyes → likely closed
     return eyes.every((e) => e.eyeClass === "Closed");
+  }
+
+  // Surface the live count of yawn / head-down events inside the rolling 30s
+  // window (capped at the drowsy threshold) so the UI can show "x/3". Deduped so
+  // the callback only fires when the displayed value actually changes.
+  private emitCount() {
+    const count = Math.min(this.events.length, DROWSY_THRESHOLD);
+    if (count !== this.lastCount) {
+      this.lastCount = count;
+      this.cb.onDrowsyCount(count);
+    }
   }
 
   private async registerEvent(ev: TripEvent) {
