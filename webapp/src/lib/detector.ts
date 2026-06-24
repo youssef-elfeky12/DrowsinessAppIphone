@@ -10,7 +10,7 @@
 //   (x/127.5 - 1). The shipped classifier.onnx is INT8-quantized.
 // YuNet input:      [1,3,640,640] CHW,  BGR, pixels 0..255.
 
-import * as ort from "onnxruntime-web";
+import type * as Ort from "onnxruntime-web";
 import {
   DetectionResult,
   EyePrediction,
@@ -27,23 +27,42 @@ const YAWN_IDX = [0, 1];
 const HEAD_IDX = [4, 5];
 const EYE_IDX = [2, 3];
 
-// onnxruntime-web loads its wasm runtime from these files, served same-origin
-// from /public/ort. Same-origin is REQUIRED: the app is cross-origin isolated
-// (COOP+COEP require-corp, see next.config.mjs) so multi-threaded WASM works,
-// and require-corp would block a cross-origin CDN copy of the .wasm.
-ort.env.wasm.wasmPaths = "/ort/";
+type OrtModule = typeof import("onnxruntime-web");
+let ortPromise: Promise<OrtModule> | null = null;
 
-// Use multiple WASM threads. ORT only honours this when the page is
-// cross-origin isolated (SharedArrayBuffer available); otherwise it clamps to
-// 1 thread on its own, so this is safe everywhere. Cap at 4 to avoid
-// oversubscribing phone CPUs. Guarded for SSR (no `navigator` on the server).
-if (typeof navigator !== "undefined") {
-  ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+// Load onnxruntime-web at runtime from the same-origin copy in /public/ort,
+// NOT via the npm import. This matters because ORT's multi-threaded WASM
+// backend spawns its pthread worker with `new Worker(new URL(import.meta.url))`
+// — i.e. the worker script is the ORT module itself. If Turbopack inlines the
+// package, that `import.meta.url` is frozen to a build-machine path
+// (file:///ROOT/…/ort.bundle.min.mjs) and the browser throws a SecurityError
+// constructing the worker. Loading the bundle from /ort makes import.meta.url a
+// real same-origin URL, so both the worker and the .wasm resolve correctly.
+// The dynamic import is hidden from the bundler so it stays a runtime fetch.
+function loadOrt(): Promise<OrtModule> {
+  if (!ortPromise) {
+    ortPromise = import(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */
+      // @ts-expect-error runtime-only same-origin module (see /public/ort)
+      "/ort/ort.bundle.min.mjs"
+    ).then((m: unknown) => {
+      const ort = m as OrtModule;
+      ort.env.wasm.wasmPaths = "/ort/";
+      // Multiple WASM threads. ORT only honours this when the page is
+      // cross-origin isolated (SharedArrayBuffer available, see COOP/COEP
+      // headers in next.config.mjs); otherwise it clamps to 1 on its own, so
+      // this is safe everywhere. Cap at 4 to avoid oversubscribing phones.
+      ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+      return ort;
+    });
+  }
+  return ortPromise;
 }
 
 export class Detector {
-  private yunet: ort.InferenceSession | null = null;
-  private clf: ort.InferenceSession | null = null;
+  private ort: OrtModule | null = null;
+  private yunet: Ort.InferenceSession | null = null;
+  private clf: Ort.InferenceSession | null = null;
 
   // Reusable offscreen canvases for resizing crops.
   private yunetCanvas: HTMLCanvasElement;
@@ -74,7 +93,8 @@ export class Detector {
   }
 
   async init(onProgress?: (msg: string) => void): Promise<void> {
-    const opts: ort.InferenceSession.SessionOptions = {
+    const ort = (this.ort = await loadOrt());
+    const opts: Ort.InferenceSession.SessionOptions = {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all",
     };
@@ -195,7 +215,7 @@ export class Detector {
       input[plane + i] = g; // G plane
       input[2 * plane + i] = r; // R plane
     }
-    const tensor = new ort.Tensor("float32", input, [1, 3, YUNET_SIZE, YUNET_SIZE]);
+    const tensor = new this.ort!.Tensor("float32", input, [1, 3, YUNET_SIZE, YUNET_SIZE]);
     const result = await this.yunet!.run({
       [this.yunet!.inputNames[0]]: tensor,
     });
@@ -251,7 +271,7 @@ export class Detector {
       input[i * 3 + 1] = g / 127.5 - 1;
       input[i * 3 + 2] = r / 127.5 - 1;
     }
-    const tensor = new ort.Tensor("float32", input, [1, IMG_SIZE, IMG_SIZE, 3]);
+    const tensor = new this.ort!.Tensor("float32", input, [1, IMG_SIZE, IMG_SIZE, 3]);
     const result = await this.clf!.run({
       [this.clf!.inputNames[0]]: tensor,
     });
